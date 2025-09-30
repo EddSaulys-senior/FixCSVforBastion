@@ -71,7 +71,6 @@ IS_PERSON_AGREEMENT_EXISTS, STARTDATE, ENDDATE, STARTTIME, ENDTIME,
 DOCISSUEDATE, BIRTHDATE, ALTERDATE, CREATEDATE, RETURNDATE, PASSCDATE,
 BLOCKEDDATA, PERSON_AGREEMENT_DATE, EMAIL
 ```
-
 ### Формат FULLCARDCODE
  - Должен содержать ровно 12 шестнадцатеричных символов (0-9, A-F)
  - Пример: A1B2C3D4E5F6
@@ -86,4 +85,4 @@ BLOCKEDDATA, PERSON_AGREEMENT_DATE, EMAIL
  - (опционально) pywin32 для работы с Excel COM
 
 
-#### Программа создана для внутреннего использования и адаптации под специфические требования системы "Личные пропуска"
+# Программа создана для внутреннего использования и адаптации под специфические требования системы "Личные пропуска"
