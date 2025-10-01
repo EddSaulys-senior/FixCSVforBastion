@@ -2,9 +2,13 @@
 
 Инструмент для нормализации данных *.csv с разных рабочих мест «Бастион» для корректного использования в комплексе с программным обеспечением «Личные пропуска».
 
+<<<<<<< HEAD
 <center>
 ![alt text](https://github.com/EddSaulys-senior/FixCSVforBastion/blob/main/ScreenBastionFix.png?raw=true)
 </center>
+=======
+![alt text](https://github.com/EddSaulys-senior/FixCSVforBastion/blob/main/ScreenBastionFix.png?raw=true)
+>>>>>>> dc980495d65f143460663719ea651b2a9684e3d3
 
 ## Описание
 
