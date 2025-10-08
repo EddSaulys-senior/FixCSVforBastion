@@ -329,6 +329,35 @@ class App:
 
         combined = combined[required_mask].copy()
 
+        # Проверка наличия должности (POST)
+        if 'POST' in combined.columns:
+            # Удаляем строки, где POST пустой (после strip)
+            post_mask = combined['POST'].astype(str).str.strip() != ''
+            rejected_no_post = combined[~post_mask].copy()
+            rejected_no_post_count = len(rejected_no_post)
+
+            if rejected_no_post_count > 0:
+                rejected_post_file = os.path.join(folder, "rejected_no_POST.xlsx")
+                rejected_no_post.to_excel(rejected_post_file, sheet_name='Без должности', index=False)
+                self.log(f"⚠️ УДАЛЕНО строк без должности (POST): {rejected_no_post_count}")
+                self.log(f"📁 Список сохранён в: {rejected_post_file}")
+            else:
+                self.log("✅ Все строки содержат должность (POST)")
+
+            # Оставляем только строки с непустым POST
+            combined = combined[post_mask].copy()
+        else:
+            # Если столбца POST вообще нет — считаем, что все строки без должности
+            rejected_no_post_count = len(combined)
+            if rejected_no_post_count > 0:
+                rejected_post_file = os.path.join(folder, "rejected_no_POST.xlsx")
+                combined.to_excel(rejected_post_file, sheet_name='Без должности', index=False)
+                self.log(f"⚠️ СТОЛБЕЦ POST ОТСУТСТВУЕТ — все {rejected_no_post_count} строк отклонены")
+                self.log(f"📁 Список сохранён в: {rejected_post_file}")
+                combined = combined.iloc[0:0]  # Очищаем DataFrame
+            else:
+                self.log("✅ Нет данных для обработки (POST отсутствует, но и строк нет)")        
+
         # Проверка дубликатов по FULLCARDCODE
         if 'FULLCARDCODE' in combined.columns:
             # Находим дубликаты по FULLCARDCODE
