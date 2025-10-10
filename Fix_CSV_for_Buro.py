@@ -221,7 +221,7 @@ class App:
             
             if rows_with_leading_trailing_spaces > 0:
                 issues_found = True
-                self.log(f"❌ СТРОКИ С НАЧАЛЬНЫМИ/КОНЕЧНЫМИ ПРОБЕЛАМИ ({rows_with_leading_trailing_spaces})")
+                self.log(f"❌ ДАННЫЕ С НАЧАЛЬНЫМИ/КОНЕЧНЫМИ ПРОБЕЛАМИ ({rows_with_leading_trailing_spaces})")
 
             if not issues_found:
                 self.log("✅ Файл соответствует всем требованиям!")
