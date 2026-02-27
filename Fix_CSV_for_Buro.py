@@ -20,7 +20,7 @@
 
 Автор: Шаулис Э.Ю.
 Дата: 30.09.2025
-Версия: 1.3
+Версия: 1.4
 """
 
 import os
@@ -28,7 +28,8 @@ import glob
 import pandas as pd
 import re
 from datetime import datetime
-from tkinter import Tk, Label, Button, Text, END, DISABLED, NORMAL, messagebox, filedialog
+from tkinter import Tk, Label, Button, Text, END, DISABLED, NORMAL, messagebox, filedialog, Menu, ttk, Scrollbar, Frame
+from tkinter.font import Font
 
 try:
     import win32com.client as win32
@@ -55,27 +56,181 @@ TARGET_FIELDS = [
 ]
 
 class App:
+    # Цветовая схема
+    COLORS = {
+        'bg': '#f0f2f5',
+        'card_bg': '#ffffff',
+        'primary': '#1890ff',
+        'primary_hover': '#40a9ff',
+        'success': '#52c41a',
+        'warning': '#faad14',
+        'error': '#ff4d4f',
+        'text': '#303133',
+        'text_secondary': '#606266',
+        'border': '#d9d9d9',
+    }
+
     def __init__(self, root):
         self.root = root
-        root.title("Исправление CSV → Excel")
-        root.geometry("800x700")
+        root.title("📋 Нормализация CSV → Excel")
+        root.geometry("900x750")
         root.resizable(True, True)
+        root.configure(bg=self.COLORS['bg'])
 
-        Label(root, text="Нормализация данных экспорта *.csv серверов «Бастион»", font=("Arial", 13, "bold")).pack(pady=10)
+        # Настройка шрифтов
+        self.font_title = Font(family="Segoe UI", size=14, weight="bold")
+        self.font_normal = Font(family="Segoe UI", size=10)
+        self.font_log = Font(family="Consolas", size=9)
 
-        self.log_text = Text(root, wrap="word", height=15)
-        self.log_text.pack(padx=10, pady=5, fill="both", expand=True)
+        self._create_menu()
+        self._create_header()
+        self._create_main_card()
+        self._create_buttons()
+        self._create_status_bar()
+
+        # Центрирование окна на экране (выполняется после создания всех виджетов)
+        self.root.update_idletasks()
+        window_width = 900
+        window_height = 750
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        self.root.geometry(f"{window_width}x{window_height}+{x}+{y}")
+
+    def _create_menu(self):
+        menu_bar = Menu(self.root)
+        file_menu = Menu(menu_bar, tearoff=0)
+        file_menu.add_command(label="📁 Выбрать папку...", command=self.run_process)
+        file_menu.add_command(label="✅ Проверить файл...", command=self.check_export_file)
+        file_menu.add_separator()
+        file_menu.add_command(label="❌ Выход", command=self.root.quit)
+        menu_bar.add_cascade(label="Файл", menu=file_menu)
+        
+        help_menu = Menu(menu_bar, tearoff=0)
+        help_menu.add_command(label="ℹ️ О программе", command=self._show_about)
+        menu_bar.add_cascade(label="Справка", menu=help_menu)
+        
+        self.root.config(menu=menu_bar)
+
+    def _create_header(self):
+        header = Frame(self.root, bg=self.COLORS['primary'], height=60)
+        header.pack(fill="x")
+        header.pack_propagate(False)
+        
+        Label(header, text="🏢 Нормализация данных экспорта *.csv серверов «Бастион»",
+              font=Font(family="Segoe UI", size=13, weight="bold"),
+              bg=self.COLORS['primary'], fg="white").pack(pady=15)
+
+    def _create_main_card(self):
+        # Карточка с логом
+        card = Frame(self.root, bg=self.COLORS['card_bg'], bd=0)
+        card.pack(padx=20, pady=15, fill="both", expand=True)
+        
+        # Рамка с тенью (через borderwidth и relief)
+        card.config(highlightbackground=self.COLORS['border'], highlightthickness=1)
+        
+        Label(card, text="📝 Журнал выполнения", font=self.font_title,
+              bg=self.COLORS['card_bg'], fg=self.COLORS['text']).pack(anchor="w", padx=15, pady=(15, 5))
+
+        # Контейнер для текста с прокруткой
+        text_frame = Frame(card, bg=self.COLORS['card_bg'])
+        text_frame.pack(padx=15, pady=5, fill="both", expand=True)
+
+        self.log_text = Text(text_frame, wrap="word", font=self.font_log,
+                             bg='#1e1e1e', fg='#d4d4d4', insertbackground='white',
+                             relief="flat", height=18, padx=10, pady=10)
+        self.log_text.pack(side="left", fill="both", expand=True)
+        
+        scrollbar = Scrollbar(text_frame, command=self.log_text.yview, bg=self.COLORS['border'])
+        scrollbar.pack(side="right", fill="y")
+        self.log_text.config(yscrollcommand=scrollbar.set)
+        
         self.log_text.config(state=DISABLED)
 
-        Button(root, text="  Выбрать папку и обработать  ", command=self.run_process, height=2).pack(pady=5)
-        Button(root, text="  Проверить готовый файл  ", command=self.check_export_file, height=2).pack(pady=5)
+        # Прогресс-бар
+        self.progress = ttk.Progressbar(card, mode='indeterminate', length=300)
+        self.progress.pack(pady=(0, 10))
 
-    def log(self, msg):
+    def _create_buttons(self):
+        btn_frame = Frame(self.root, bg=self.COLORS['bg'])
+        btn_frame.pack(pady=(0, 15))
+
+        self.btn_process = Button(btn_frame, text="🚀 Выбрать папку и обработать",
+                                   font=self.font_normal, bg=self.COLORS['primary'], fg="white",
+                                   activebackground=self.COLORS['primary_hover'], activeforeground="white",
+                                   bd=0, padx=25, pady=10, cursor="hand2", command=self.run_process)
+        self.btn_process.pack(side="left", padx=10)
+
+        self.btn_check = Button(btn_frame, text="✅ Проверить готовый файл",
+                                 font=self.font_normal, bg=self.COLORS['card_bg'], fg=self.COLORS['primary'],
+                                 activebackground='#e6f7ff', activeforeground=self.COLORS['primary'],
+                                 bd=1, relief="solid", padx=25, pady=10, cursor="hand2", command=self.check_export_file)
+        self.btn_check.pack(side="left", padx=10)
+
+    def _create_status_bar(self):
+        self.status_var = self.root.var = "Готов к работе"
+        self.status_label = Label(self.root, text=self.status_var, 
+                                   font=self.font_normal, bg=self.COLORS['card_bg'],
+                                   fg=self.COLORS['text_secondary'], anchor="w", padx=15, pady=8)
+        self.status_label.pack(side="bottom", fill="x")
+
+    def _show_about(self):
+        messagebox.showinfo("О программе",
+            "📋 Нормализация CSV → Excel\n\n"
+            "Версия: 1.4\n"
+            "Автор: Шаулис Э.Ю.\n"
+            "Дата: 30.09.2025\n\n"
+            "Нормализация данных *.csv с разных рабочих мест «Бастион»")
+
+    def set_status(self, text, color=None):
+        self.status_label.config(text=text, fg=color or self.COLORS['text_secondary'])
+        self.root.update_idletasks()
+
+    def start_progress(self):
+        self.progress.start(10)
+        self.btn_process.config(state=DISABLED)
+        self.btn_check.config(state=DISABLED)
+
+    def stop_progress(self):
+        self.progress.stop()
+        self.btn_process.config(state=NORMAL)
+        self.btn_check.config(state=NORMAL)
+
+    def log(self, msg, tag=None):
         self.log_text.config(state=NORMAL)
-        self.log_text.insert(END, msg + "\n")
+        
+        # Определяем цвет по префиксу сообщения
+        if tag:
+            color = tag
+        elif msg.startswith('✅'):
+            color = 'success'
+        elif msg.startswith('⚠') or msg.startswith('❗'):
+            color = 'warning'
+        elif msg.startswith('❌'):
+            color = 'error'
+        elif msg.startswith('📁') or msg.startswith('💾'):
+            color = 'info'
+        elif msg.startswith('📊') or msg.startswith('🏢') or msg.startswith('🔒'):
+            color = 'stat'
+        else:
+            color = 'default'
+
+        colors = {
+            'success': '#52c41a',
+            'warning': '#faad14', 
+            'error': '#ff4d4f',
+            'info': '#1890ff',
+            'stat': '#722ed1',
+            'default': '#d4d4d4'
+        }
+        
+        self.log_text.tag_config(color, foreground=colors.get(color, '#d4d4d4'))
+        self.log_text.insert(END, msg + "\n", color)
         self.log_text.see(END)
         self.log_text.config(state=DISABLED)
         self.log_text.update_idletasks()
+        
         if hasattr(self, 'log_file'):
             with open(self.log_file, "a", encoding="utf-8") as f:
                 f.write(msg + "\n")
@@ -243,11 +398,18 @@ class App:
         self.log_file = os.path.join(folder, "export_log.txt")
         open(self.log_file, "w", encoding="utf-8").close()
 
-        self.log(f"Выбрана папка: {folder}")
+        self.log("═" * 50, 'info')
+        self.log(f"🚀 Начат экспорт из папки: {folder}", 'info')
+        self.log("═" * 50, 'info')
+        
+        self.start_progress()
+        self.set_status("Обработка файлов...", self.COLORS['primary'])
         csv_files = glob.glob(os.path.join(folder, "*.csv"))
         if not csv_files:
-            messagebox.showerror("Ошибка", "В папке нет CSV-файлов!")
-            self.log("ОШИБКА: CSV-файлы не найдены.")
+            self.stop_progress()
+            self.set_status("Ошибка: файлы не найдены", self.COLORS['error'])
+            messagebox.showerror("❌ Ошибка", "В папке нет CSV-файлов!")
+            self.log("ОШИБКА: CSV-файлы не найдены.", 'error')
             return
 
         self.log(f"Найдено {len(csv_files)} CSV-файлов. Загрузка...")
@@ -264,7 +426,9 @@ class App:
                 self.log(f" ОШИБКА при чтении {f}: {str(e)}")
 
         if not all_dfs:
-            self.log("ОШИБКА: ни один файл не загружен.")
+            self.stop_progress()
+            self.set_status("Ошибка: файлы не загружены", self.COLORS['error'])
+            self.log("❌ ОШИБКА: ни один файл не загружен.", 'error')
             return
 
         combined = pd.concat(all_dfs, ignore_index=True)
@@ -405,7 +569,7 @@ class App:
         # Статистика по отделам
         if 'WDEP8' in combined.columns:
             dep_stats = combined['WDEP8'].value_counts()
-            self.log(f"\n📊 Статистика по отделам (топ-10):")
+            self.log("\n📊 Статистика по отделам (топ-10):")
             for i, (dep, count) in enumerate(dep_stats.head(10).items()):
                 self.log(f"   {i+1}. {dep}: {count} человек")
             
@@ -418,7 +582,7 @@ class App:
             # Используем WORG7 как основной источник информации об организации
             if 'WORG7' in combined.columns and combined['WORG7'].notna().any():
                 org_stats = combined['WORG7'].value_counts()
-                self.log(f"\n🏢 Статистика по организациям (топ-10):")
+                self.log("\n🏢 Статистика по организациям (топ-10):")
                 for i, (org, count) in enumerate(org_stats.head(10).items()):
                     if org and org.strip() != '':
                         self.log(f"   {i+1}. {org}: {count} человек")
@@ -432,7 +596,7 @@ class App:
                     org_data = pd.concat([org_data, combined[col]])
                 org_stats = org_data.value_counts()
                 
-                self.log(f"\n🏢 Статистика по организациям (топ-10):")
+                self.log("\n🏢 Статистика по организациям (топ-10):")
                 count = 0
                 for org, org_count in org_stats.head(10).items():
                     if org and org.strip() != '':
@@ -450,7 +614,7 @@ class App:
             total_count = len(combined)
             self.log(f"\n🔒 Статистика по заблокированным пропускам: {blocked_count} из {total_count} ({blocked_count/total_count*100:.2f}%)")
 
-        self.log(f"\n💾 Ждем сохранение файла")
+        self.log("\n💾 Ждем сохранение файла")
 
         for col in TARGET_FIELDS:
             if col not in combined.columns:
@@ -478,7 +642,9 @@ class App:
         else:
             self.log("⚠ Модуль win32com не установлен — пересохранение пропущено")
 
-        messagebox.showinfo("Готово!", f"Экспорт завершён!\nФайл: {output_file}\nЛог: export_log.txt")
+        self.stop_progress()
+        self.set_status("Готово! Обработано записей: " + str(len(combined)), self.COLORS['success'])
+        messagebox.showinfo("✅ Готово!", f"Экспорт завершён!\n\n📁 Файл: {output_file}\n📝 Лог: export_log.txt\n📊 Обработано: {len(combined)} записей")
 
 def main():
     root = Tk()
