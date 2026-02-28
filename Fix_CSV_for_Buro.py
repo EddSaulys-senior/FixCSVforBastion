@@ -19,8 +19,8 @@
 - добавлена проверка готового xlsx файла на соответствие структуры
 
 Автор: Шаулис Э.Ю.
-Дата: 30.09.2025
-Версия: 1.4
+Дата: 01.03.2026
+Версия: 1.5
 """
 
 import os
@@ -30,6 +30,7 @@ import re
 from datetime import datetime
 from tkinter import Tk, Label, Button, Text, END, DISABLED, NORMAL, messagebox, filedialog, Menu, ttk, Scrollbar, Frame
 from tkinter.font import Font
+import threading
 
 try:
     import win32com.client as win32
@@ -97,6 +98,31 @@ class App:
         x = (screen_width - window_width) // 2
         y = (screen_height - window_height) // 2
         self.root.geometry(f"{window_width}x{window_height}+{x}+{y}")
+
+    def _ui(self, func, *args, wait=False, **kwargs):
+        """Run UI operations safely from worker threads."""
+        if threading.current_thread() is threading.main_thread():
+            return func(*args, **kwargs)
+
+        if wait:
+            done = threading.Event()
+            result = {}
+
+            def wrapper():
+                try:
+                    result['value'] = func(*args, **kwargs)
+                except Exception as e:
+                    result['error'] = e
+                finally:
+                    done.set()
+
+            self.root.after(0, wrapper)
+            done.wait()
+            if 'error' in result:
+                raise result['error']
+            return result.get('value')
+
+        self.root.after(0, lambda: func(*args, **kwargs))
 
     def _create_menu(self):
         menu_bar = Menu(self.root)
@@ -178,62 +204,74 @@ class App:
     def _show_about(self):
         messagebox.showinfo("О программе",
             "📋 Нормализация CSV → Excel\n\n"
-            "Версия: 1.4\n"
+            "Версия: 1.5\n"
             "Автор: Шаулис Э.Ю.\n"
-            "Дата: 30.09.2025\n\n"
+            "Дата: 01.03.2026\n\n"
             "Нормализация данных *.csv с разных рабочих мест «Бастион»")
 
     def set_status(self, text, color=None):
-        self.status_label.config(text=text, fg=color or self.COLORS['text_secondary'])
-        self.root.update_idletasks()
+        def _set():
+            self.status_label.config(text=text, fg=color or self.COLORS['text_secondary'])
+            self.root.update_idletasks()
+        self._ui(_set)
 
     def start_progress(self):
-        self.progress.start(10)
-        self.btn_process.config(state=DISABLED)
-        self.btn_check.config(state=DISABLED)
+        def _start():
+            self.progress.pack(pady=(0, 10))
+            self.progress.start(10)
+            self.btn_process.config(state=DISABLED)
+            self.btn_check.config(state=DISABLED)
+            self.root.update()
+        self._ui(_start)
 
     def stop_progress(self):
-        self.progress.stop()
-        self.btn_process.config(state=NORMAL)
-        self.btn_check.config(state=NORMAL)
+        def _stop():
+            self.progress.stop()
+            self.progress.pack_forget()
+            self.btn_process.config(state=NORMAL)
+            self.btn_check.config(state=NORMAL)
+            self.root.update()
+        self._ui(_stop)
 
     def log(self, msg, tag=None):
-        self.log_text.config(state=NORMAL)
-        
-        # Определяем цвет по префиксу сообщения
-        if tag:
-            color = tag
-        elif msg.startswith('✅'):
-            color = 'success'
-        elif msg.startswith('⚠') or msg.startswith('❗'):
-            color = 'warning'
-        elif msg.startswith('❌'):
-            color = 'error'
-        elif msg.startswith('📁') or msg.startswith('💾'):
-            color = 'info'
-        elif msg.startswith('📊') or msg.startswith('🏢') or msg.startswith('🔒'):
-            color = 'stat'
-        else:
-            color = 'default'
+        def _log():
+            self.log_text.config(state=NORMAL)
 
-        colors = {
-            'success': '#52c41a',
-            'warning': '#faad14', 
-            'error': '#ff4d4f',
-            'info': '#1890ff',
-            'stat': '#722ed1',
-            'default': '#d4d4d4'
-        }
-        
-        self.log_text.tag_config(color, foreground=colors.get(color, '#d4d4d4'))
-        self.log_text.insert(END, msg + "\n", color)
-        self.log_text.see(END)
-        self.log_text.config(state=DISABLED)
-        self.log_text.update_idletasks()
-        
-        if hasattr(self, 'log_file'):
-            with open(self.log_file, "a", encoding="utf-8") as f:
-                f.write(msg + "\n")
+            # Определяем цвет по префиксу сообщения
+            if tag:
+                color = tag
+            elif msg.startswith('✅'):
+                color = 'success'
+            elif msg.startswith('⚠') or msg.startswith('❗'):
+                color = 'warning'
+            elif msg.startswith('❌'):
+                color = 'error'
+            elif msg.startswith('📁') or msg.startswith('💾'):
+                color = 'info'
+            elif msg.startswith('📊') or msg.startswith('🏢') or msg.startswith('🔒'):
+                color = 'stat'
+            else:
+                color = 'default'
+
+            colors = {
+                'success': '#52c41a',
+                'warning': '#faad14',
+                'error': '#ff4d4f',
+                'info': '#1890ff',
+                'stat': '#722ed1',
+                'default': '#d4d4d4'
+            }
+
+            self.log_text.tag_config(color, foreground=colors.get(color, '#d4d4d4'))
+            self.log_text.insert(END, msg + "\n", color)
+            self.log_text.see(END)
+            self.log_text.config(state=DISABLED)
+            self.log_text.update_idletasks()
+
+            if hasattr(self, 'log_file'):
+                with open(self.log_file, "a", encoding="utf-8") as f:
+                    f.write(msg + "\n")
+        self._ui(_log)
 
     def detect_encoding(self, file_path):
         try:
@@ -294,7 +332,7 @@ class App:
 
             # 2. Проверка порядка столбцов
             actual_order = list(df.columns)
-            expected_order = [col for col in TARGET_FIELDS if col in actual_order]
+            expected_order = TARGET_FIELDS.copy()
             
             if actual_order != expected_order:
                 issues_found = True
@@ -360,7 +398,7 @@ class App:
                 self.log("❌ ОТСУТСТВУЮТ СТОЛБЦЫ NAME ИЛИ TABLENO")
 
             # 6. Проверка пустых строк
-            all_empty_rows = df[df.isna().all(axis=1)]
+            all_empty_rows = df[df.astype(str).apply(lambda col: col.str.strip()).eq('').all(axis=1)]
             if len(all_empty_rows) > 0:
                 issues_found = True
                 self.log(f"❌ ПУСТЫЕ СТРОКИ ({len(all_empty_rows)}):")
@@ -404,11 +442,18 @@ class App:
         
         self.start_progress()
         self.set_status("Обработка файлов...", self.COLORS['primary'])
+        
+        # Запускаем обработку в отдельном потоке
+        thread = threading.Thread(target=self._run_process_thread, args=(folder,))
+        thread.daemon = True
+        thread.start()
+
+    def _run_process_thread(self, folder):
         csv_files = glob.glob(os.path.join(folder, "*.csv"))
         if not csv_files:
             self.stop_progress()
             self.set_status("Ошибка: файлы не найдены", self.COLORS['error'])
-            messagebox.showerror("❌ Ошибка", "В папке нет CSV-файлов!")
+            self._ui(messagebox.showerror, "❌ Ошибка", "В папке нет CSV-файлов!")
             self.log("ОШИБКА: CSV-файлы не найдены.", 'error')
             return
 
@@ -436,10 +481,14 @@ class App:
         self.log(f"\nВсего строк после объединения: {initial_count}")
 
         # Удаление заглушек
-        mask_bad = (combined['NAME'] == 'Фамилия') & (combined['FIRSTNAME'] == 'Имя') & (combined['SECONDNAME'] == 'Отчество')
-        bad_rows = mask_bad.sum()
-        combined = combined[~mask_bad].copy()
-        self.log(f"\nУдалено полей с русскими названиями: {bad_rows}")
+        placeholder_cols = ['NAME', 'FIRSTNAME', 'SECONDNAME']
+        if all(col in combined.columns for col in placeholder_cols):
+            mask_bad = (combined['NAME'] == 'Фамилия') & (combined['FIRSTNAME'] == 'Имя') & (combined['SECONDNAME'] == 'Отчество')
+            bad_rows = mask_bad.sum()
+            combined = combined[~mask_bad].copy()
+            self.log(f"\nУдалено полей с русскими названиями: {bad_rows}")
+        else:
+            self.log("\n⚠️ Пропущено удаление заглушек: отсутствуют столбцы NAME/FIRSTNAME/SECONDNAME")
 
         # Применяем strip ко всем строковым значениям
         for col in combined.columns:
@@ -472,26 +521,37 @@ class App:
 
         # Пустые строки
         before_empty = len(combined)
-        combined = combined.dropna(how='all')
+        empty_mask = combined.astype(str).apply(lambda col: col.str.strip()).eq('').all(axis=1)
+        combined = combined[~empty_mask].copy()
         self.log(f"Удалено пустых строк: {before_empty - len(combined)}")
 
         # NAME / TABLENO — сохраняем отклонённых
-        required_mask = (
-            combined[['NAME', 'TABLENO']].notna().all(axis=1) &
-            (combined[['NAME', 'TABLENO']] != '').all(axis=1)
-        )
-        rejected_req = combined[~required_mask].copy()
-        rejected_count = len(rejected_req)
-
-        if rejected_count > 0:
-            rejected_file = os.path.join(folder, "rejected_NAME_TABLENO.xlsx")
-            rejected_req.to_excel(rejected_file, sheet_name='Отклонённые', index=False)
-            self.log(f"⚠️ УДАЛЕНО строк без NAME/TABLENO: {rejected_count}")
-            self.log(f"📁 Полный список сохранён в: {rejected_file}")
+        required_cols = ['NAME', 'TABLENO']
+        missing_required_cols = [col for col in required_cols if col not in combined.columns]
+        if missing_required_cols:
+            rejected_count = len(combined)
+            if rejected_count > 0:
+                rejected_file = os.path.join(folder, "rejected_NAME_TABLENO.xlsx")
+                combined.to_excel(rejected_file, sheet_name='Отклонённые', index=False)
+                self.log(f"⚠️ ОТСУТСТВУЮТ обязательные столбцы: {', '.join(missing_required_cols)}")
+                self.log(f"⚠️ УДАЛЕНО строк без возможности проверки NAME/TABLENO: {rejected_count}")
+                self.log(f"📁 Полный список сохранён в: {rejected_file}")
+            combined = combined.iloc[0:0]
         else:
-            self.log("✅ Все строки содержат NAME и TABLENO")
+            req_values = combined[required_cols].astype(str).apply(lambda col: col.str.strip())
+            required_mask = (req_values != '').all(axis=1)
+            rejected_req = combined[~required_mask].copy()
+            rejected_count = len(rejected_req)
 
-        combined = combined[required_mask].copy()
+            if rejected_count > 0:
+                rejected_file = os.path.join(folder, "rejected_NAME_TABLENO.xlsx")
+                rejected_req.to_excel(rejected_file, sheet_name='Отклонённые', index=False)
+                self.log(f"⚠️ УДАЛЕНО строк без NAME/TABLENO: {rejected_count}")
+                self.log(f"📁 Полный список сохранён в: {rejected_file}")
+            else:
+                self.log("✅ Все строки содержат NAME и TABLENO")
+
+            combined = combined[required_mask].copy()
 
         # Проверка наличия должности (POST)
         if 'POST' in combined.columns:
@@ -612,7 +672,11 @@ class App:
         if 'IS_BLOCKED' in combined.columns:
             blocked_count = (combined['IS_BLOCKED'] == '1').sum()
             total_count = len(combined)
-            self.log(f"\n🔒 Статистика по заблокированным пропускам: {blocked_count} из {total_count} ({blocked_count/total_count*100:.2f}%)")
+            if total_count > 0:
+                blocked_percent = blocked_count / total_count * 100
+                self.log(f"\n🔒 Статистика по заблокированным пропускам: {blocked_count} из {total_count} ({blocked_percent:.2f}%)")
+            else:
+                self.log("\n🔒 Статистика по заблокированным пропускам: 0 из 0 (0.00%)")
 
         self.log("\n💾 Ждем сохранение файла")
 
@@ -629,22 +693,29 @@ class App:
 
         # Пересохраняем через Excel COM
         if HAS_WIN32:
+            excel = None
+            wb = None
             try:
                 excel = win32.Dispatch("Excel.Application")
                 excel.Visible = False
                 wb = excel.Workbooks.Open(output_file)
                 wb.Save()
-                wb.Close(SaveChanges=True)
-                excel.Quit()
                 self.log("✅ Файл пересохранён через Excel (структура выровнена)")
             except Exception as e:
                 self.log(f"⚠ Не удалось пересохранить через Excel: {str(e)}")
+            finally:
+                try:
+                    if wb is not None:
+                        wb.Close(SaveChanges=True)
+                finally:
+                    if excel is not None:
+                        excel.Quit()
         else:
             self.log("⚠ Модуль win32com не установлен — пересохранение пропущено")
 
         self.stop_progress()
         self.set_status("Готово! Обработано записей: " + str(len(combined)), self.COLORS['success'])
-        messagebox.showinfo("✅ Готово!", f"Экспорт завершён!\n\n📁 Файл: {output_file}\n📝 Лог: export_log.txt\n📊 Обработано: {len(combined)} записей")
+        self._ui(messagebox.showinfo, "✅ Готово!", f"Экспорт завершён!\n\n📁 Файл: {output_file}\n📝 Лог: export_log.txt\n📊 Обработано: {len(combined)} записей")
 
 def main():
     root = Tk()
